@@ -998,3 +998,759 @@ local function processBinds(now)
     if not blocked then
         for _, b in ipairs(binds) do
             if b.enabled and b.key2 and b.key2 ~= 0
+                and physicalKeyDown(b.key) and physicalKeyDown(b.key2) then
+                combosActive[b.key] = true
+                combosActive[b.key2] = true
+            end
+        end
+    end
+    for i, b in ipairs(binds) do
+        local down = not blocked and b.enabled and physicalKeyDown(b.key)
+        if down and b.key2 and b.key2 ~= 0 then
+            down = physicalKeyDown(b.key2)
+        elseif down and (not b.key2 or b.key2 == 0) then
+            down = not combosActive[b.key]
+        end
+        if down then
+            local firstPress = not binderKeyWasDown[i]
+            local elapsed = now - (binderLastSend[i] or now)
+            if firstPress or (b.repeatHold and elapsed >= b.delay) then
+                local ok, command = pcall(function() return u8:decode(b.command) end)
+                if ok and command and command ~= '' then sampSendChat(command) end
+                binderLastSend[i] = now
+            end
+        else
+            binderLastSend[i] = nil
+        end
+        binderKeyWasDown[i] = down
+    end
+end
+
+local function escapeCardText(text)
+    return text:gsub("\\", "\\\\"):gsub("\t", "\\t"):gsub("\r", ""):gsub("\n", "\\n")
+end
+
+local function unescapeCardText(text)
+    return text:gsub("\\n", "\n"):gsub("\\t", "\t"):gsub("\\\\", "\\")
+end
+
+local function loadCards()
+    cards = {}
+    local f = io.open(cardsFile, "r")
+    if not f then return end
+    for line in f:lines() do
+        local title, text = line:match("^(.-)\t(.*)$")
+        if title and text then
+            cards[#cards + 1] = {
+                title = unescapeCardText(title),
+                text = unescapeCardText(text)
+            }
+        end
+    end
+    f:close()
+end
+
+local function saveCards()
+    local f = io.open(cardsFile, "w")
+    if not f then return end
+    for _, card in ipairs(cards) do
+        f:write(escapeCardText(card.title), "\t", escapeCardText(card.text), "\n")
+    end
+    f:close()
+end
+
+local function createCard()
+    local title = ffi.string(cardTitle):gsub("^%s+", ""):gsub("%s+$", "")
+    local text = ffi.string(cardText):gsub("^%s+", ""):gsub("%s+$", "")
+
+    if title == "" or text == "" then
+        sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}Введите название и текст карточки.", -1)
+        return
+    end
+
+    cards[#cards + 1] = {title = title, text = text}
+    saveCards()
+    cardTitle[0] = 0
+    cardText[0] = 0
+end
+
+local function useReportCard(card)
+    if waitingReportDialog then
+        sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}/report уже ожидает диалог.", -1)
+        return
+    end
+
+    pendingReportText = u8:decode(card.text) .. " Разбан ИП"
+    waitingReportDialog = true
+    sampSendChat("/report")
+
+    lua_thread.create(function()
+        wait(5000)
+        if waitingReportDialog then
+            waitingReportDialog = false
+            pendingReportText = nil
+            sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}Диалог /report не открылся.", -1)
+        end
+    end)
+end
+
+local function getPlayerStamina()
+    local stamina = getFloatStat(22)
+    if stamina > 100 then stamina = stamina / 10 end
+    return math.floor(math.min(stamina, 100))
+end
+
+local function countNearbyPlayers(radius)
+    local x, y, z = getCharCoordinates(PLAYER_PED)
+    local count = 0
+
+    for id = 0, 1000 do
+        local found, ped = sampGetCharHandleBySampPlayerId(id)
+        if found and ped ~= PLAYER_PED and doesCharExist(ped) then
+            local px, py, pz = getCharCoordinates(ped)
+            if getDistanceBetweenCoords3d(x, y, z, px, py, pz) <= radius then
+                count = count + 1
+            end
+        end
+    end
+
+    return count
+end
+
+local function sendFamilyLocation()
+    if fampointEnabled[0] then
+        sampSendChat("/fampoint")
+    end
+
+    if not faminfoEnabled[0] then return end
+
+    local now = os.time()
+    if now - lastMessageTime < messageCooldown then return end
+    lastMessageTime = now
+
+    local nearbyPlayers = countNearbyPlayers(2.0)
+    local hp = getCharHealth(PLAYER_PED)
+    local armour = getCharArmour(PLAYER_PED)
+    local stamina = getPlayerStamina()
+
+    lua_thread.create(function()
+        wait(300)
+        sampSendChat(string.format(
+            "/fam Семья мне нужна помощь, рядом со мной %d чел. I HP - %d I AR - %d I C - %d",
+            nearbyPlayers, hp, armour, stamina
+        ))
+    end)
+end
+
+local function checkMyLowHp()
+    if not myLowHpEnabled[0] then
+        myLowHpSent = false
+        return
+    end
+
+    local hp = getCharHealth(PLAYER_PED)
+    if hp > 0 and hp < myHpThreshold[0] then
+        if not myLowHpSent then
+            sampSendChat(string.format("/fam У меня %d HP", hp))
+            myLowHpSent = true
+        end
+    else
+        myLowHpSent = false
+    end
+end
+
+local function checkNearbyPlayersLowHp()
+    if not playerLowHpEnabled[0] then
+        playerLowState = {}
+        return
+    end
+
+    local x, y, z = getCharCoordinates(PLAYER_PED)
+    local seenLow = {}
+
+    for id = 0, 1000 do
+        local found, ped = sampGetCharHandleBySampPlayerId(id)
+
+        if found and ped ~= PLAYER_PED and doesCharExist(ped) then
+            local px, py, pz = getCharCoordinates(ped)
+            local distance = getDistanceBetweenCoords3d(x, y, z, px, py, pz)
+
+            if distance <= playerHpDistance[0] then
+                local hp = math.floor(getCharHealth(ped))
+
+                if hp > 0 and hp < playerHpThreshold[0] then
+                    seenLow[id] = true
+
+                    if not playerLowState[id] then
+                        local nickname = sampGetPlayerNickname(id)
+                        if not nickname then nickname = "Unknown" end
+
+                        sampAddChatMessage(
+                            string.format(
+                                "{FF5555}[LOW HP] {FFFFFF}%s[%d] {FFAAAA}HP: %d {FFFFFF}| Дистанция: %.1f м",
+                                nickname, id, hp, distance
+                            ),
+                            -1
+                        )
+                        playerLowState[id] = true
+                    end
+                end
+            end
+        end
+    end
+
+    for id in pairs(playerLowState) do
+        if not seenLow[id] then
+            playerLowState[id] = nil
+        end
+    end
+end
+
+local function updateHpBroadcast()
+    if not hpBroadcastEnabled[0] then
+        lastBroadcastHp = nil
+        hpBroadcastQueue = {}
+        return
+    end
+    if isCharDead(PLAYER_PED) then return end
+    local hp = math.floor(getCharHealth(PLAYER_PED))
+    if hp <= 0 then return end
+    local found, myId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    if found then
+        trackedFamily[tostring(myId)] = {
+            name = sampGetPlayerNickname(myId) or "Me", id = tostring(myId),
+            hp = hp, time = os.time()
+        }
+    end
+    if lastBroadcastHp == nil then
+        lastBroadcastHp = hp
+        return
+    end
+    if hp ~= lastBroadcastHp then
+        local delta = hp - lastBroadcastHp
+        local phrase
+        if delta >= 100 then
+            phrase = "Я принял аптечку"
+        elseif delta < 0 then
+            phrase = "Здоровье снижено до " .. tostring(hp)
+        else
+            phrase = "Здоровье повышено до " .. tostring(hp)
+        end
+        hpBroadcastQueue[#hpBroadcastQueue + 1] = {text = phrase, hp = hp}
+        lastBroadcastHp = hp
+    end
+end
+
+local function sendQueuedHpBroadcast(timer)
+    if not hpBroadcastEnabled[0] or #hpBroadcastQueue == 0 then return end
+    if timer - lastHpBroadcastAt < 1100 then return end
+    local item = table.remove(hpBroadcastQueue, 1)
+    sampSendChat("/fam " .. item.text .. " [MC_HP:" .. item.hp .. "]")
+    local ok, myId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    if ok then
+        local myName = sampGetPlayerNickname(myId) or "Me"
+        trackedFamily[tostring(myId)] = {name = myName, id = tostring(myId), hp = item.hp, time = os.time()}
+    end
+    lastHpBroadcastAt = timer
+end
+
+local function recordFamilyHp(message)
+    local hp = tonumber(message:match("%[MC_HP:(%d+)%]"))
+    if not hp then return end
+    local clean = message:gsub("{[%x]+}", "")
+    local before = clean:match("^(.-)%[MC_HP:%d+%]") or clean
+    local bestId, bestName
+    for id = 0, 1000 do
+        if sampIsPlayerConnected(id) then
+            local name = sampGetPlayerNickname(id)
+            if name and name ~= "" then
+                local startPos = before:find(name, 1, true)
+                if startPos then
+                    local after = before:sub(startPos + #name)
+                    if after:match("^%s*%[" .. id .. "%]") or after:match("^%s*%(" .. id .. "%)")
+                        or after:match("^%s*:") or after:match("^%s+") then
+                        bestId, bestName = id, name
+                        break
+                    end
+                end
+            end
+        end
+    end
+    if not bestId then
+        local name, id = before:match("([%w_]+)%s*%[(%d+)%]")
+        if not name then name, id = before:match("([%w_]+)%s*%((%d+)%)") end
+        if not name then return end
+        bestName, bestId = name, tonumber(id)
+    end
+    trackedFamily[tostring(bestId)] = {name = bestName, id = tostring(bestId), hp = hp, time = os.time()}
+end
+
+imgui.OnInitialize(function()
+    local io = imgui.GetIO()
+    io.IniFilename = nil
+    local font = imgui.ImFontConfig()
+    font.MergeMode = false
+    io.Fonts:AddFontDefault(font, io.Fonts:GetGlyphRangesCyrillic())
+    local style = imgui.GetStyle()
+    style.WindowRounding = 12
+    style.ChildRounding = 8
+    style.FrameRounding = 7
+    style.GrabRounding = 7
+    style.ScrollbarRounding = 8
+    style.TabRounding = 7
+    style.WindowPadding = imgui.ImVec2(18, 16)
+    style.FramePadding = imgui.ImVec2(11, 8)
+    style.ItemSpacing = imgui.ImVec2(10, 10)
+    local c = imgui.Col
+    local v = imgui.ImVec4
+    style.Colors[c.WindowBg] = v(0.065, 0.07, 0.085, 0.98)
+    style.Colors[c.ChildBg] = v(0.09, 0.095, 0.11, 1)
+    style.Colors[c.PopupBg] = v(0.09, 0.095, 0.11, 1)
+    style.Colors[c.Border] = v(0.29, 0.25, 0.12, 0.8)
+    style.Colors[c.Text] = v(0.95, 0.95, 0.92, 1)
+    style.Colors[c.TextDisabled] = v(0.55, 0.56, 0.58, 1)
+    style.Colors[c.FrameBg] = v(0.15, 0.16, 0.18, 1)
+    style.Colors[c.FrameBgHovered] = v(0.24, 0.23, 0.17, 1)
+    style.Colors[c.FrameBgActive] = v(0.31, 0.27, 0.14, 1)
+    style.Colors[c.TitleBg] = v(0.08, 0.08, 0.09, 1)
+    style.Colors[c.TitleBgActive] = v(0.11, 0.105, 0.075, 1)
+    style.Colors[c.CheckMark] = v(1, 0.76, 0.10, 1)
+    style.Colors[c.SliderGrab] = v(1, 0.76, 0.10, 1)
+    style.Colors[c.SliderGrabActive] = v(1, 0.86, 0.34, 1)
+    style.Colors[c.Button] = v(0.20, 0.19, 0.14, 1)
+    style.Colors[c.ButtonHovered] = v(0.35, 0.29, 0.12, 1)
+    style.Colors[c.ButtonActive] = v(0.48, 0.37, 0.10, 1)
+    style.Colors[c.Header] = v(0.23, 0.20, 0.12, 1)
+    style.Colors[c.HeaderHovered] = v(0.37, 0.29, 0.12, 1)
+    style.Colors[c.HeaderActive] = v(0.46, 0.34, 0.10, 1)
+    style.Colors[c.Tab] = v(0.13, 0.14, 0.16, 1)
+    style.Colors[c.TabHovered] = v(0.37, 0.29, 0.12, 1)
+    style.Colors[c.TabActive] = v(0.40, 0.31, 0.11, 1)
+    style.Colors[c.Separator] = v(0.42, 0.33, 0.13, 0.8)
+
+end)
+
+imgui.OnFrame(function() return menuOpen[0] end, function()
+    imgui.SetNextWindowSize(imgui.ImVec2(780, 720), imgui.Cond.FirstUseEver)
+    if imgui.Begin(u8"ШиШаНи Центр | Меню", menuOpen) then
+        imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"ШиШаНи")
+        imgui.SameLine()
+        imgui.TextDisabled("  /mem  |  v1.0")
+        imgui.Separator()
+        imgui.Spacing()
+        if imgui.BeginTabBar("pages") then
+            if imgui.BeginTabItem(u8"Слежка ") then
+                if imgui.Checkbox(u8"Отправлять изменения HP в семейный чат", hpBroadcastEnabled) then
+                    lastBroadcastHp = nil
+                    hpBroadcastQueue = {}
+                    if hpBroadcastEnabled[0] then
+                        menuOpen[0] = false
+                        imgui.Process = false
+                        imgui.ShowCursor = false
+                    end
+                    saveSettings()
+                end
+                if imgui.Checkbox(u8"Включить / выключить панель HP", overlayEnabled) then
+                    if not overlayEnabled[0] then overlayVisible = false else overlayVisible = true end
+                    saveSettings()
+                end
+                if overlayEnabled[0] then
+                local overlayKeyText = capturingOverlayKey and u8"Нажми новую клавишу..." or (u8"Скрыть менюшку с информацией: " .. u8(getKeyName(overlayKey[0])))
+                if imgui.Button(overlayKeyText, imgui.ImVec2(-1, 28)) then
+                    capturingOverlayKey = true
+                    capturingLocationKey = false
+                    keyCaptureArmed = false
+                end
+                if imgui.Checkbox(u8"Скрыть сообщения HP от игроков в чате", hideHpMessages) then saveSettings() end
+                imgui.Separator()
+                imgui.Text(u8"Положение панели на экране")
+                if imgui.SliderInt(u8"По горизонтали (%)", overlayX, 0, 100) then saveSettings() end
+                if imgui.SliderInt(u8"По вертикали (%)", overlayY, 0, 100) then saveSettings() end
+                if imgui.Button(u8"Вернуть положение", imgui.ImVec2(-1, 28)) then overlayX[0] = 72 overlayY[0] = 42 saveSettings() end
+                imgui.Text(u8"Панель не захватывает мышь")
+                end
+                imgui.EndTabItem()
+            end
+            if imgui.BeginTabItem(u8"Карточки") then
+                imgui.Text(u8"Название")
+                imgui.InputText("##name", cardTitle, 64)
+                imgui.Text(u8"Текст")
+                imgui.InputTextMultiline("##text", cardText, 256, imgui.ImVec2(-1, 75))
+                if imgui.Button(u8"Добавить") then createCard() end
+                imgui.Separator()
+                imgui.BeginChild("cards", imgui.ImVec2(0, 155), true)
+                local remove = nil
+                for i, card in ipairs(cards) do
+                    if imgui.Button(card.title .. "##" .. i, imgui.ImVec2(330, 28)) then useReportCard(card) end
+                    imgui.SameLine()
+                    if imgui.Button("X##" .. i) then remove = i end
+                end
+                if remove then table.remove(cards, remove) saveCards() end
+                imgui.EndChild()
+                imgui.EndTabItem()
+            end
+            if imgui.BeginTabItem(u8"Биндер") then
+                imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"БИНДЕР КОМАНД")
+                imgui.SameLine()
+                imgui.TextDisabled(string.format('%d / %d', #binds, BINDER_LIMIT))
+                imgui.Separator()
+                imgui.BeginChild('bind_list', imgui.ImVec2(0, 177), true)
+                if #binds == 0 then
+                    imgui.TextDisabled(u8"Биндов пока нет. Создай первый ниже.")
+                end
+                local removeIndex = nil
+                for i, b in ipairs(binds) do
+                    local state = b.enabled and u8"ВКЛ" or u8"ВЫКЛ"
+                    local mode = b.repeatHold and (u8"Удержание / " .. tostring(b.delay) .. u8" мс") or u8"Одно нажатие"
+                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1),
+                        string.format('%02d  [%s]  ', i, getBindKeyLabel(b)) .. state)
+                    imgui.SameLine()
+                    if imgui.Button(u8"Изменить##bind" .. i) then editBinder(i) end
+                    imgui.SameLine()
+                    if imgui.Button(u8"Удалить##bind" .. i) then removeIndex = i end
+                    imgui.TextWrapped(u8"Команда: " .. b.command)
+                    imgui.TextDisabled(mode)
+                    imgui.Separator()
+                end
+                if removeIndex then
+                    table.remove(binds, removeIndex)
+                    saveBinds()
+                    resetBinderInputs()
+                    binderKeyWasDown, binderLastSend = {}, {}
+                end
+                imgui.EndChild()
+                imgui.Separator()
+                if bindEditing > 0 then
+                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"РЕДАКТИРОВАТЬ БИНД #" .. bindEditing)
+                else
+                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"НОВЫЙ БИНД")
+                end
+                imgui.Text(u8"Команда или текст для отправки")
+                imgui.InputText('##bind_command', bindCommand, 192)
+                local bindCaption = capturingBinderKey
+                    and u8"Нажми одну клавишу или зажми две вместе (Esc — отмена)"
+                    or (u8"Назначить клавиши: " .. getBindKeyLabel({key=bindKey[0], key2=bindKeySecond[0]}))
+                if imgui.Button(bindCaption .. '##bind_capture', imgui.ImVec2(-1, 34)) then
+                    startBinderCapture()
+                end
+                if capturingBinderKey and binderCaptureFirst then
+                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1),
+                        u8"Первая клавиша: " .. getKeyName(binderCaptureFirst) .. u8" — можно нажать вторую")
+                end
+                imgui.TextDisabled(u8"Нажми 1 клавишу или одновременно зажми 2 (например Ctrl + G).")
+                if bindKeySecond[0] ~= 0 and not capturingBinderKey then
+                    if imgui.Button(u8"Убрать вторую клавишу##bind_clear_second", imgui.ImVec2(-1, 27)) then
+                        bindKeySecond[0] = 0
+                    end
+                end
+                if imgui.Checkbox(u8"Повторять при удержании клавиши", bindRepeat) then end
+                if bindRepeat[0] then
+                    imgui.SliderInt(u8"Задержка повтора (мс)", bindDelay, 150, 5000)
+                end
+                imgui.SameLine()
+                if imgui.Checkbox(u8"Включён##bind_on", bindEnabled) then end
+                if imgui.Button(bindEditing > 0 and u8"Сохранить изменения" or u8"Добавить бинд",
+                    imgui.ImVec2(210, 32)) then commitBinder() end
+                imgui.SameLine()
+                if imgui.Button(u8"Сбросить поля", imgui.ImVec2(155, 32)) then resetBinderInputs() end
+                imgui.EndTabItem()
+            end
+            if imgui.BeginTabItem(u8"Проверка ускорений") then
+                prov.drawTab()
+                imgui.EndTabItem()
+            end
+            imgui.EndTabBar()
+        end
+    end
+    imgui.End()
+end)
+
+imgui.OnFrame(function() return fastMenuOpen[0] end, function()
+    imgui.SetNextWindowSize(imgui.ImVec2(430, 280), imgui.Cond.FirstUseEver)
+    if imgui.Begin(u8"ШиШаНи | Fast F / Shift", fastMenuOpen) then
+        if imgui.Checkbox(u8"Включить Fast F", fastFEnabled) then saveSettings() end
+        if fastFEnabled[0] then
+            if imgui.SliderInt(u8"Задержка F (мс)", fastFDelay, 1, 2000) then saveSettings() end
+        end
+        imgui.Separator()
+        if imgui.Checkbox(u8"Включить Fast Shift", fastShiftEnabled) then saveSettings() end
+        if fastShiftEnabled[0] then
+            if imgui.SliderInt(u8"Задержка Shift (мс)", fastShiftDelay, 1, 2000) then saveSettings() end
+        end
+        if fastShiftEnabled[0] then
+            local keyCaption = capturingFastShiftKey and u8"Нажми нужную клавишу..." or
+                (u8"Клавиша активации: " .. getKeyName(fastShiftHoldKey[0]))
+            if imgui.Button(keyCaption .. "##fast_shift_bind", imgui.ImVec2(-1, 32)) then
+                capturingFastShiftKey = true
+                capturingLocationKey = false
+                capturingOverlayKey = false
+                keyCaptureArmed = false
+            end
+        end
+        imgui.TextDisabled(u8"При удержании выбранной клавиши нажимается левый Shift.")
+    end
+    imgui.End()
+end)
+
+-- Compact /sc window, independent from /mem and /fast.
+imgui.OnFrame(function() return scMenuOpen[0] end, function()
+    imgui.SetNextWindowSize(imgui.ImVec2(450, 195), imgui.Cond.FirstUseEver)
+    if imgui.Begin(u8"ШиШаНи | Скорость", scMenuOpen) then
+        imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"СКОРОСТЬ АНИМАЦИЙ")
+        imgui.Separator()
+        imgui.Text(u8(string.format("Скорость: x%.1f", scSpeed)))
+        if imgui.SliderFloat("##sc_rate", scSpeedSlider, 0.1, 10.0, "%.1f") then
+            scSetSpeed(scSpeedSlider[0])
+        end
+        if imgui.Button("- 0.1", imgui.ImVec2(110, 32)) then
+            scSetSpeed(scSpeed - 0.1)
+        end
+        imgui.SameLine()
+        if imgui.Button("+ 0.1", imgui.ImVec2(110, 32)) then
+            scSetSpeed(scSpeed + 0.1)
+        end
+        imgui.SameLine()
+        if imgui.Button(u8"Сбросить", imgui.ImVec2(150, 32)) then
+            scSetSpeed(1.0)
+        end
+    end
+    imgui.End()
+end)
+
+local hpOverlayFont = nil
+local hpOverlayTitleFont = nil
+local function drawHpOverlay()
+    if not overlayEnabled[0] or not overlayVisible or menuOpen[0] or scMenuOpen[0] or isPauseMenuActive() then return end
+    if not hpOverlayFont then hpOverlayFont = renderCreateFont("Arial", 10, 5) end
+    if not hpOverlayTitleFont then hpOverlayTitleFont = renderCreateFont("Arial", 12, 5) end
+    local sx, sy = getScreenResolution()
+    local w = 315
+    local x = math.floor(math.max(0, sx - w) * overlayX[0] / 100)
+    local y = math.floor(math.max(0, sy - 150) * overlayY[0] / 100)
+    local entries = {}
+    for _, player in pairs(trackedFamily) do entries[#entries + 1] = player end
+    table.sort(entries, function(a, b) return tostring(a.name) < tostring(b.name) end)
+    local count = math.min(#entries, 16)
+    local h = 80 + math.max(1, count) * 29
+    renderDrawBox(x, y, w, h, 0xE6111215)
+    renderDrawBox(x, y, 4, h, 0xFFFFC400)
+    renderDrawBox(x, y, w, 3, 0xFFFFC400)
+    renderFontDrawText(hpOverlayTitleFont, "ИНФОРМАЦИЯ", x + math.floor((w - renderGetFontDrawTextLength(hpOverlayTitleFont, "ИНФОРМАЦИЯ")) / 2), y + 12, 0xFFFFD02A)
+    renderFontDrawText(hpOverlayFont, "\216\224\243\240\236\232\241\242\251  |  " .. tostring(#entries), x + 17, y + 40, 0xFF9FA4AC)
+    renderDrawBox(x + 12, y + 64, w - 24, 1, 0xFF44454A)
+    if #entries == 0 then
+        renderFontDrawText(hpOverlayFont, "Ожидание данных HP...", x + 17, y + 77, 0xFFB0B0B0)
+    else
+        for i = 1, count do
+            local player = entries[i]
+            local hp = tonumber(player.hp) or 0
+            local py = y + 73 + (i - 1) * 29
+            if i % 2 == 0 then renderDrawBox(x + 10, py - 2, w - 20, 27, 0xFF202126) end
+            local name = tostring(player.name or "Unknown")
+            if #name > 21 then name = name:sub(1, 21) end
+            renderFontDrawText(hpOverlayFont, string.format("%s [%s]", name, tostring(player.id or "?")), x + 17, py + 2, 0xFFF0F0F0)
+            renderFontDrawText(hpOverlayFont, tostring(hp) .. " HP", x + w - 85, py + 2, hp <= 100 and 0xFFFF6666 or 0xFFFFD02A)
+        end
+    end
+end
+
+function main()
+    if not isSampLoaded() or not isSampfuncsLoaded() then return end
+    while not isSampAvailable() do wait(100) end
+
+    loadCards()
+    loadBinds()
+    prov.initialize()
+
+    sampRegisterChatCommand("mem", function()
+        scMenuOpen[0] = false
+        fastMenuOpen[0] = false
+        menuOpen[0] = not menuOpen[0]
+    end)
+    sampRegisterChatCommand("fast", function()
+        scMenuOpen[0] = false
+        menuOpen[0] = false
+        fastMenuOpen[0] = not fastMenuOpen[0]
+    end)
+    sampRegisterChatCommand("sc", function()
+        menuOpen[0] = false
+        fastMenuOpen[0] = false
+        scMenuOpen[0] = not scMenuOpen[0]
+    end)
+
+    sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}Загружен. Меню: /mem", -1)
+
+    while true do
+        wait(0)
+        scApplySpeed()
+        drawHpOverlay()
+
+        if not menuOpen[0] and not fastMenuOpen[0] and not scMenuOpen[0] and overlayEnabled[0] and overlayVisible then
+            imgui.Process = false
+            imgui.ShowCursor = false
+            if not sampIsChatInputActive() and not sampIsDialogActive() and not isPauseMenuActive() then
+                if sampIsCursorActive() then sampToggleCursor(false) end
+            end
+        end
+
+        imgui.Process = menuOpen[0] or fastMenuOpen[0] or scMenuOpen[0]
+        imgui.ShowCursor = menuOpen[0] or fastMenuOpen[0] or scMenuOpen[0]
+        if not menuOpen[0] and not fastMenuOpen[0] and not scMenuOpen[0] then
+            imgui.Process = false
+            imgui.ShowCursor = false
+        end
+
+        if capturingBinderKey then
+            updateBinderKeyCapture(getGameTimer())
+        elseif capturingOverlayKey or capturingLocationKey or capturingFastShiftKey then
+            if not keyCaptureArmed then
+                if not physicalKeyDown(1) and not physicalKeyDown(2) then
+                    keyCaptureArmed = true
+                    for vk = 3, 255 do ffi.C.GetAsyncKeyState(vk) end
+                end
+            else
+                for vk = 3, 255 do
+                    if vk ~= 4 and vk ~= 1 and vk ~= 2 and vk ~= 16 and vk ~= 17
+                        and vk ~= 18 and bit.band(ffi.C.GetAsyncKeyState(vk), 1) ~= 0 then
+                        if capturingFastShiftKey then fastShiftHoldKey[0] = vk end
+                        if capturingOverlayKey then overlayKey[0] = vk end
+                        if capturingLocationKey then locationKey[0] = vk end
+                        capturingOverlayKey = false
+                        capturingLocationKey = false
+                        capturingFastShiftKey = false
+                        keyCaptureArmed = false
+                        saveSettings()
+                        break
+                    end
+                end
+            end
+        elseif overlayEnabled[0] and not menuOpen[0] and not fastMenuOpen[0] and not scMenuOpen[0] and not sampIsChatInputActive()
+            and not sampIsDialogActive() and not isPauseMenuActive()
+            and not isSampfuncsConsoleActive()
+            and isKeyJustPressed(overlayKey[0]) then
+            overlayVisible = not overlayVisible
+        end
+
+        local timer = getGameTimer()
+        if timer - (lastHpBroadcastCheck or 0) >= 150 then
+            lastHpBroadcastCheck = timer
+            updateHpBroadcast()
+        end
+        sendQueuedHpBroadcast(timer)
+
+        if timer - lastMyHpCheck >= 250 then
+            lastMyHpCheck = timer
+        end
+
+        if timer - lastPlayerHpScan >= 500 then
+            lastPlayerHpScan = timer
+        end
+
+        if fastFEnabled[0]
+            and not menuOpen[0] and not fastMenuOpen[0] and not scMenuOpen[0]
+            and physicalKeyDown(VK_F)
+            and not sampIsChatInputActive()
+            and not sampIsDialogActive()
+            and not isPauseMenuActive() then
+
+            local nowFastF = getGameTimer()
+            if not lastFastFPress or nowFastF - lastFastFPress >= math.max(1, fastFDelay[0]) then
+                pressFastF()
+                lastFastFPress = nowFastF
+            end
+        else
+            lastFastFPress = nil
+        end
+
+        if fastShiftEnabled[0] and not capturingFastShiftKey
+            and not menuOpen[0] and not fastMenuOpen[0] and not scMenuOpen[0]
+            and physicalKeyDown(fastShiftHoldKey[0])
+            and not sampIsChatInputActive()
+            and not sampIsDialogActive()
+            and not isPauseMenuActive()
+            and not isSampfuncsConsoleActive() then
+
+            local nowFastShift = getGameTimer()
+            if not lastFastShiftPress or nowFastShift - lastFastShiftPress >= math.max(1, fastShiftDelay[0]) then
+                pressFastShift()
+                lastFastShiftPress = nowFastShift
+            end
+        else
+            lastFastShiftPress = nil
+        end
+
+        if not menuOpen[0] and not fastMenuOpen[0] and not scMenuOpen[0] and not capturingLocationKey and not capturingOverlayKey
+            and not sampIsChatInputActive()
+            and not sampIsDialogActive()
+            and not isPauseMenuActive()
+            and not isSampfuncsConsoleActive()
+            and isKeyJustPressed(locationKey[0]) then
+
+            sendFamilyLocation()
+        end
+
+        processBinds(timer)
+        prov.maintenance(timer)
+    end
+end
+
+function sampev.onShowDialog(dialogId, style, title, button1, button2, text)
+    if waitingReportDialog and pendingReportText and (style == 1 or style == 3) then
+        local responseText = pendingReportText
+        waitingReportDialog = false
+        pendingReportText = nil
+
+        lua_thread.create(function()
+            wait(100)
+            sampSendDialogResponse(dialogId, 1, 0, responseText)
+        end)
+
+        return false
+    end
+end
+
+function sampev.onSendTakeDamage(playerId, damage, weaponId, bodyPart)
+    prov.onSendTakeDamage(playerId, damage, weaponId, bodyPart)
+end
+
+function sampev.onSendGiveDamage(playerId, damage, weaponId, bodyPart)
+    prov.onSendGiveDamage(playerId, damage, weaponId, bodyPart)
+end
+
+function sampev.onTextDrawSetString(id, text)
+    prov.onTextDrawSetString(id, text)
+end
+
+function sampev.onShowTextDraw(id, data)
+    prov.onShowTextDraw(id, data)
+end
+
+function sampev.onTextDrawHide(id)
+    prov.onTextDrawHide(id)
+end
+
+function sampev.onPlayerSync(playerId, data)
+    local ok, err = pcall(prov.onPlayerSync, playerId, data)
+    if not ok and type(print) == 'function' then
+        local now = getGameTimer()
+        if not lastRunSyncErrAt or now-lastRunSyncErrAt>15000 then
+            lastRunSyncErrAt=now
+            print('[Shishani] Run monitor: '..tostring(err))
+        end
+    end
+end
+
+function sampev.onServerMessage(color, text)
+    local ok, err = pcall(prov.onServerMessage, color, text)
+    if not ok and type(print)=='function' then print('[Shishani] Hit monitor: '..tostring(err)) end
+    recordFamilyHp(text)
+    if hideHpMessages[0] and text:find("[MC_HP:", 1, true) then return false end
+    if not fampointEnabled[0] then return end
+    if not text:find("[Семья]", 1, true) and not text:find("[Family]", 1, true) then return end
+    local found, myId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    if not found then return end
+    local mention = "@" .. tostring(myId)
+    if text:find(mention .. "%s+[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]") then
+        lua_thread.create(function() wait(300) sampSendChat("/fampoint") end)
+    end
+end
