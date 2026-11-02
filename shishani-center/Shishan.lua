@@ -1,6 +1,6 @@
 script_name("ШиШаНи Центр")
 script_author("ШиШаНи")
-script_version("1.4")
+script_version("1.5")
 
 require "lib.moonloader"
 
@@ -44,12 +44,66 @@ local defaults = {
         sc_speed = 1.0,
         prov_hits_enabled = true,
         prov_run_enabled = true,
-        prov_run_threshold = 55
+        prov_run_threshold = 55,
+        accent_r = 1.00,
+        accent_g = 0.78,
+        accent_b = 0.14
     }
 }
 
 local cfg = inicfg.load(defaults, CONFIG_NAME)
 inicfg.save(cfg, CONFIG_NAME)
+
+-- The user's accent color, shared by all /mem pages and the HP overlay.
+local function clampColor(x, fallback)
+    local value = tonumber(x)
+    if not value then value = fallback end
+    return math.max(0, math.min(1, value))
+end
+local accentR = new.float(clampColor(cfg.settings.accent_r, 1.00))
+local accentG = new.float(clampColor(cfg.settings.accent_g, 0.78))
+local accentB = new.float(clampColor(cfg.settings.accent_b, 0.14))
+local function accentVec()
+    return imgui.ImVec4(accentR[0], accentG[0], accentB[0], 1)
+end
+local function accentComponents()
+    return math.floor(accentR[0] * 255 + .5),
+           math.floor(accentG[0] * 255 + .5),
+           math.floor(accentB[0] * 255 + .5)
+end
+local function accentChat()
+    local r,g,b = accentComponents()
+    return string.format('{%02X%02X%02X}', r,g,b)
+end
+local function accentARGB()
+    local r,g,b = accentComponents()
+    return 0xFF000000 + r*65536 + g*256 + b
+end
+
+-- Recolor active ImGui theme without touching the dark background.
+local function applyAccentStyle()
+    local style = imgui.GetStyle()
+    local c, v = imgui.Col, imgui.ImVec4
+    local r,g,b = accentR[0],accentG[0],accentB[0]
+    local function mixed(scale, offset)
+        return v(math.min(1,r*scale+offset),math.min(1,g*scale+offset),
+                 math.min(1,b*scale+offset),1)
+    end
+    style.Colors[c.CheckMark] = v(r,g,b,1)
+    style.Colors[c.SliderGrab] = v(r,g,b,1)
+    style.Colors[c.SliderGrabActive] = mixed(0.85,0.13)
+    style.Colors[c.Button] = mixed(0.18,0.11)
+    style.Colors[c.ButtonHovered] = mixed(0.38,0.15)
+    style.Colors[c.ButtonActive] = mixed(0.51,0.16)
+    style.Colors[c.Header] = mixed(0.25,0.13)
+    style.Colors[c.HeaderHovered] = mixed(0.44,0.12)
+    style.Colors[c.HeaderActive] = mixed(0.49,0.13)
+    style.Colors[c.Tab] = mixed(0.15,0.12)
+    style.Colors[c.TabHovered] = mixed(0.41,0.12)
+    style.Colors[c.TabActive] = mixed(0.38,0.12)
+    style.Colors[c.Separator] = v(r*0.45+0.12,g*0.45+0.12,b*0.45+0.12,0.85)
+    style.Colors[c.Border] = v(r*0.20+0.19,g*0.20+0.19,b*0.20+0.19,0.85)
+end
 
 local menuOpen = new.bool(false)
 local fastMenuOpen = new.bool(false)
@@ -145,9 +199,31 @@ local function saveSettings()
     cfg.settings.overlay_x = overlayX[0]
     cfg.settings.overlay_y = overlayY[0]
     cfg.settings.sc_speed = scSpeed
+    cfg.settings.accent_r = accentR[0]
+    cfg.settings.accent_g = accentG[0]
+    cfg.settings.accent_b = accentB[0]
     inicfg.save(cfg, CONFIG_NAME)
 end
 
+local function setAccent(r,g,b)
+    accentR[0] = clampColor(r,1)
+    accentG[0] = clampColor(g,.78)
+    accentB[0] = clampColor(b,.14)
+    applyAccentStyle()
+    saveSettings()
+end
+
+-- Display names and RGB values for one-click themes.
+local accentPresets = {
+    {u8"Жёлтый", 1.00, 0.78, 0.14},
+    {u8"Синий", 0.19, 0.58, 1.00},
+    {u8"Зелёный", 0.20, 0.85, 0.48},
+    {u8"Красный", 0.96, 0.27, 0.32},
+    {u8"Фиолетовый", 0.67, 0.42, 0.98},
+    {u8"Розовый", 1.00, 0.41, 0.70},
+    {u8"Оранжевый", 1.00, 0.51, 0.19},
+    {u8"Белый", 0.94, 0.94, 0.94}
+}
 
 -- The original working animation list and application loop, with no extra names.
 local scAnimations = {
@@ -233,7 +309,7 @@ local lastUiErrorAt = 0
 local diag = {rpcTake = 0, rpcGive = 0, hud = 0, accepted = 0, ignored = 0, lastReason = 'Нет событий', lastSource = '-'}
 
 -- UTF-8 is used directly by mimgui; CP1251 is used ONLY for SA-MP chat.
-local COL_YELLOW = imgui.ImVec4(1.00, 0.78, 0.14, 1.00)
+-- Yellow is no longer hardcoded: all highlights use the selected accent.
 local COL_RED = imgui.ImVec4(1.00, 0.40, 0.35, 1.00)
 local COL_GRAY = imgui.ImVec4(0.69, 0.70, 0.73, 1.00)
 local COL_GREEN = imgui.ImVec4(0.40, 0.86, 0.56, 1.00)
@@ -319,7 +395,7 @@ end
 
 local function chatAlert(e)
     -- Порядок: игрок | оружие | точный интервал (мс) | оценка xN.
-    local msg = ru('{FFD22D}[ШиШаНи] {FFFFFF}Игрок {FD446F}') .. clean(e.name)
+    local msg = accentChat() .. ru('[ШиШаНи] {FFFFFF}Игрок {FD446F}') .. clean(e.name)
         .. ru('{FFFFFF} | Оружие: ') .. ru(weaponLabel(e.weapon))
         .. ru(' | Интервал: ') .. string.format('%.1f', e.avg) .. ru(' мс')
         .. ru(' | ') .. tostring(e.level) .. ru(' |')
@@ -630,7 +706,7 @@ end
             runHistory[#runHistory+1]=event
             if #runHistory>MAX_RUN_HISTORY then table.remove(runHistory,1) end
             saveRunHistory()
-            sampAddChatMessage('{FFD22D}[Shishani] {FFFFFF}' .. clean(name)
+            sampAddChatMessage(accentChat() .. '[Shishani] {FFFFFF}' .. clean(name)
                 .. ' | RUN | ' .. string.format('%.1f km/h',mean) .. ' | '..tostring(anim)..' |', -1)
         end
     end
@@ -660,9 +736,9 @@ end
     end
 
     local function drawCheckerTab()
-        imgui.TextColored(COL_YELLOW, u8"ПРОВЕРКА УСКОРЕНИЙ")
+        imgui.TextColored(accentVec(), u8"ПРОВЕРКА УСКОРЕНИЙ")
         imgui.SameLine()
-        imgui.TextDisabled(u8" /mem | ШиШаНи v1.4")
+        imgui.TextDisabled(u8" /mem | ШиШаНи v1.5")
         imgui.Separator()
         if imgui.Checkbox(u8"Проверять удары##prov_hits",enabled) then
             cfg.settings.prov_hits_enabled=enabled[0]
@@ -677,6 +753,23 @@ end
         end
         imgui.TextDisabled(u8"Предупреждения не являются доказательством чита")
         imgui.Spacing()
+        -- Always visible above the sub-tabs, including "Все события".
+        imgui.Text(u8"Лог ударов: " .. tostring(#history) .. u8" записей")
+        if imgui.Button(u8"ОЧИСТИТЬ ЛОГ УДАРОВ##prov_clear_hits_top", imgui.ImVec2(-1, 38)) then
+            local previousHistory = history
+            history = {}
+            if persistHistory() then
+                hitStates = {}
+                recentEvents = {}
+                recentLines = {}
+                sampAddChatMessage(accentChat() .. ru('[ШиШаНи] {FFFFFF}Лог ударов очищен.'), -1)
+            else
+                history = previousHistory
+                sampAddChatMessage(ru('{FF5555}[ШиШаНи] {FFFFFF}Ошибка очистки файла истории.'), -1)
+            end
+        end
+        imgui.TextDisabled(u8"История ускоренного бега не удаляется")
+        imgui.Separator()
         if imgui.BeginTabBar('prov_sub_tabs_fixed') then
             if imgui.BeginTabItem(u8"Все события##prov_all") then
                 imgui.Text(u8"Удары: "..#history..u8" | Бег: "..#runHistory)
@@ -698,7 +791,7 @@ end
                 if #events==0 then imgui.TextDisabled(u8"Предупреждений пока нет") end
                 for i=1,math.min(#events,50) do
                     local e=events[i]
-                    imgui.TextColored(COL_YELLOW,(e.kind=='RUN' and 'RUN  ' or 'HIT  ')..tostring(e.name))
+                    imgui.TextColored(accentVec(),(e.kind=='RUN' and 'RUN  ' or 'HIT  ')..tostring(e.name))
                     imgui.Text(tostring(e.detail))
                     imgui.TextDisabled(tostring(e.stamp))
                     imgui.Separator()
@@ -707,17 +800,6 @@ end
                 imgui.EndTabItem()
             end
             if imgui.BeginTabItem(u8"Ускорение ударов##prov_hits_view") then
-                imgui.Text(u8"Сохранено записей об ударах: " .. tostring(#history))
-                if imgui.Button(u8"Очистить лог ударов##clear_hit_log", imgui.ImVec2(250, 32)) then
-                    history = {}
-                    hitStates = {}
-                    if persistHistory() then
-                        sampAddChatMessage(ru('{FFD22D}[ШиШаНи] {FFFFFF}Лог ударов очищен.'), -1)
-                    else
-                        sampAddChatMessage(ru('{FF5555}[ШиШаНи] {FFFFFF}Не удалось сохранить очистку лога.'), -1)
-                    end
-                end
-                imgui.Separator()
                 imgui.Text(u8"Диапазоны: 380-395 мс = x1.1 | 350-365 = x1.2")
                 imgui.Text(u8"316-330 мс = x1.3 | до 315 = x1.3+")
                 imgui.TextDisabled(u8"8 ударов, 7 интервалов. Скорость — ориентировочная.")
@@ -1338,15 +1420,15 @@ imgui.OnInitialize(function()
     style.Colors[c.TabHovered] = v(0.37, 0.29, 0.12, 1)
     style.Colors[c.TabActive] = v(0.40, 0.31, 0.11, 1)
     style.Colors[c.Separator] = v(0.42, 0.33, 0.13, 0.8)
-
+    applyAccentStyle()
 end)
 
 imgui.OnFrame(function() return menuOpen[0] end, function()
     imgui.SetNextWindowSize(imgui.ImVec2(780, 720), imgui.Cond.FirstUseEver)
     if imgui.Begin(u8"ШиШаНи Центр | Меню", menuOpen) then
-        imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"ШиШаНи")
+        imgui.TextColored(accentVec(), u8"ШиШаНи")
         imgui.SameLine()
-        imgui.TextDisabled("  /mem  |  v1.4")
+        imgui.TextDisabled("  /mem  |  v1.5")
         imgui.Separator()
         imgui.Spacing()
         if imgui.BeginTabBar("pages") then
@@ -1401,7 +1483,7 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
                 imgui.EndTabItem()
             end
             if imgui.BeginTabItem(u8"Биндер") then
-                imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"БИНДЕР КОМАНД")
+                imgui.TextColored(accentVec(), u8"БИНДЕР КОМАНД")
                 imgui.SameLine()
                 imgui.TextDisabled(string.format('%d / %d', #binds, BINDER_LIMIT))
                 imgui.Separator()
@@ -1413,7 +1495,7 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
                 for i, b in ipairs(binds) do
                     local state = b.enabled and u8"ВКЛ" or u8"ВЫКЛ"
                     local mode = b.repeatHold and (u8"Удержание / " .. tostring(b.delay) .. u8" мс") or u8"Одно нажатие"
-                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1),
+                    imgui.TextColored(accentVec(),
                         string.format('%02d  [%s]  ', i, getBindKeyLabel(b)) .. state)
                     imgui.SameLine()
                     if imgui.Button(u8"Изменить##bind" .. i) then editBinder(i) end
@@ -1432,9 +1514,9 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
                 imgui.EndChild()
                 imgui.Separator()
                 if bindEditing > 0 then
-                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"РЕДАКТИРОВАТЬ БИНД #" .. bindEditing)
+                    imgui.TextColored(accentVec(), u8"РЕДАКТИРОВАТЬ БИНД #" .. bindEditing)
                 else
-                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"НОВЫЙ БИНД")
+                    imgui.TextColored(accentVec(), u8"НОВЫЙ БИНД")
                 end
                 imgui.Text(u8"Команда или текст для отправки")
                 imgui.InputText('##bind_command', bindCommand, 192)
@@ -1445,7 +1527,7 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
                     startBinderCapture()
                 end
                 if capturingBinderKey and binderCaptureFirst then
-                    imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1),
+                    imgui.TextColored(accentVec(),
                         u8"Первая клавиша: " .. getKeyName(binderCaptureFirst) .. u8" — можно нажать вторую")
                 end
                 imgui.TextDisabled(u8"Нажми 1 клавишу или одновременно зажми 2 (например Ctrl + G).")
@@ -1468,6 +1550,32 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
             end
             if imgui.BeginTabItem(u8"Проверка ускорений") then
                 prov.drawTab()
+                imgui.EndTabItem()
+            end
+            if imgui.BeginTabItem(u8"Цвет") then
+                imgui.TextColored(accentVec(), u8"ЦВЕТ ИНТЕРФЕЙСА")
+                imgui.TextDisabled(u8"Измени жёлтые элементы меню на свой цвет.")
+                imgui.Separator()
+                imgui.Text(u8"Готовые цвета:")
+                for i, item in ipairs(accentPresets) do
+                    if imgui.Button(item[1] .. '##accent_preset_' .. i, imgui.ImVec2(153, 35)) then
+                        setAccent(item[2],item[3],item[4])
+                    end
+                    if i % 4 ~= 0 then imgui.SameLine() end
+                end
+                imgui.Separator()
+                imgui.Text(u8"Или настрой любой цвет вручную:")
+                local changed = false
+                if imgui.SliderFloat(u8"Красный (R)##acc_r", accentR, 0, 1, '%.2f') then changed = true end
+                if imgui.SliderFloat(u8"Зелёный (G)##acc_g", accentG, 0, 1, '%.2f') then changed = true end
+                if imgui.SliderFloat(u8"Синий (B)##acc_b", accentB, 0, 1, '%.2f') then changed = true end
+                if changed then applyAccentStyle(); saveSettings() end
+                imgui.Spacing()
+                imgui.TextColored(accentVec(), u8"ПРИМЕР ЦВЕТА   /   ШиШаНи")
+                imgui.TextDisabled(u8"Настройка автоматически сохраняется после изменения.")
+                if imgui.Button(u8"Вернуть жёлтый цвет##accent_reset", imgui.ImVec2(240, 35)) then
+                    setAccent(1.00,0.78,0.14)
+                end
                 imgui.EndTabItem()
             end
             imgui.EndTabBar()
@@ -1507,7 +1615,7 @@ end)
 imgui.OnFrame(function() return scMenuOpen[0] end, function()
     imgui.SetNextWindowSize(imgui.ImVec2(450, 195), imgui.Cond.FirstUseEver)
     if imgui.Begin(u8"ШиШаНи | Скорость", scMenuOpen) then
-        imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"СКОРОСТЬ АНИМАЦИЙ")
+        imgui.TextColored(accentVec(), u8"СКОРОСТЬ АНИМАЦИЙ")
         imgui.Separator()
         imgui.Text(u8(string.format("Скорость: x%.1f", scSpeed)))
         if imgui.SliderFloat("##sc_rate", scSpeedSlider, 0.1, 10.0, "%.1f") then
@@ -1544,9 +1652,9 @@ local function drawHpOverlay()
     local count = math.min(#entries, 16)
     local h = 80 + math.max(1, count) * 29
     renderDrawBox(x, y, w, h, 0xE6111215)
-    renderDrawBox(x, y, 4, h, 0xFFFFC400)
-    renderDrawBox(x, y, w, 3, 0xFFFFC400)
-    renderFontDrawText(hpOverlayTitleFont, "ИНФОРМАЦИЯ", x + math.floor((w - renderGetFontDrawTextLength(hpOverlayTitleFont, "ИНФОРМАЦИЯ")) / 2), y + 12, 0xFFFFD02A)
+    renderDrawBox(x, y, 4, h, accentARGB())
+    renderDrawBox(x, y, w, 3, accentARGB())
+    renderFontDrawText(hpOverlayTitleFont, "ИНФОРМАЦИЯ", x + math.floor((w - renderGetFontDrawTextLength(hpOverlayTitleFont, "ИНФОРМАЦИЯ")) / 2), y + 12, accentARGB())
     renderFontDrawText(hpOverlayFont, "\216\224\243\240\236\232\241\242\251  |  " .. tostring(#entries), x + 17, y + 40, 0xFF9FA4AC)
     renderDrawBox(x + 12, y + 64, w - 24, 1, 0xFF44454A)
     if #entries == 0 then
@@ -1560,7 +1668,7 @@ local function drawHpOverlay()
             local name = tostring(player.name or "Unknown")
             if #name > 21 then name = name:sub(1, 21) end
             renderFontDrawText(hpOverlayFont, string.format("%s [%s]", name, tostring(player.id or "?")), x + 17, py + 2, 0xFFF0F0F0)
-            renderFontDrawText(hpOverlayFont, tostring(hp) .. " HP", x + w - 85, py + 2, hp <= 100 and 0xFFFF6666 or 0xFFFFD02A)
+            renderFontDrawText(hpOverlayFont, tostring(hp) .. " HP", x + w - 85, py + 2, hp <= 100 and 0xFFFF6666 or accentARGB())
         end
     end
 end
@@ -1581,7 +1689,7 @@ local busy = false
 local lastCheck = 0
 
 local function inform(text)
-    local msg = '{FFD22D}[Shishan Update] {FFFFFF}' .. tostring(text) -- Already CP1251; do not decode again
+    local msg = accentChat() .. '[Shishan Update] {FFFFFF}' .. tostring(text) -- Already CP1251; do not decode again
     if isSampAvailable() then sampAddChatMessage(msg, -1) else print(msg) end
 end
 
