@@ -1,6 +1,6 @@
 script_name("Помощник онлайн")
 script_author("Помощник онлайн")
-script_version("2.1")
+script_version("2.2")
 -- SHISHANI_ONE_FILE_AUTOUPDATER
 -- Encoded, compact single-file MoonLoader script.
 local _payload = [=[
@@ -356,6 +356,45 @@ end
 _source = nil
 local _code = table.concat(_slices)
 _slices = nil
+local function _patch_literal(old, new)
+    local start = assert(_code:find(old, 1, true), 'Missing menu updater source')
+    _code = _code:sub(1,start-1)..new.._code:sub(start+#old)
+end
+_patch_literal('"082F5D"', '"082F5E"')
+_patch_literal('"619B04276B49D09F79D4FD2A607FB6E3443D67A1C1F5248214FB2250"', '"619B04276B49D09F79D4FD2A607FB6E3443D67A1C1F5248214FB2251"')
+_patch_literal('"E5104AB3E71AF823AA8AB5361D4483"', '"E5104AB3E71AF823AA8AB5361D4484"')
+_patch_literal([====[
+sampRegisterChatCommand((__S(411)), function()
+scMenuOpen[0] = false
+fastMenuOpen[0] = false
+menuOpen[0] = not menuOpen[0]
+end)
+local function _fastMenuToggle()
+scMenuOpen[0] = false
+menuOpen[0] = false
+fastMenuOpen[0] = not fastMenuOpen[0]
+imgui.Process = fastMenuOpen[0]
+imgui.ShowCursor = fastMenuOpen[0]
+sampAddChatMessage('[Pomoshnik Online] Fast menu ' .. (fastMenuOpen[0] and 'ON' or 'OFF') .. ' (/fast, /fastmenu)', -1)
+end
+sampRegisterChatCommand((__S(412)), _fastMenuToggle)
+sampRegisterChatCommand('fastmenu', _fastMenuToggle)
+]====], [====[
+local function _openMainMenu()
+scMenuOpen[0] = false
+fastMenuOpen[0] = false
+menuOpen[0] = not menuOpen[0]
+end
+sampRegisterChatCommand((__S(411)), _openMainMenu)
+sampRegisterChatCommand('men', _openMainMenu)
+local function _openFastMenu()
+scMenuOpen[0] = false
+menuOpen[0] = false
+fastMenuOpen[0] = not fastMenuOpen[0]
+end
+sampRegisterChatCommand((__S(412)), _openFastMenu)
+sampRegisterChatCommand('fas', _openFastMenu)
+]====])
 local _chunk, _error = loadstring(_code, '@Shishan.lua')
 if not _chunk then error('[Помощник онлайн] '..tostring(_error)) end
 _chunk()
