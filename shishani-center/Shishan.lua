@@ -1,6 +1,6 @@
 script_name("ШиШаНи Центр")
 script_author("ШиШаНи")
-script_version("1.3")
+script_version("1.4")
 
 require "lib.moonloader"
 
@@ -662,7 +662,7 @@ end
     local function drawCheckerTab()
         imgui.TextColored(COL_YELLOW, u8"ПРОВЕРКА УСКОРЕНИЙ")
         imgui.SameLine()
-        imgui.TextDisabled(u8" /mem | ШиШаНи v1.2")
+        imgui.TextDisabled(u8" /mem | ШиШаНи v1.4")
         imgui.Separator()
         if imgui.Checkbox(u8"Проверять удары##prov_hits",enabled) then
             cfg.settings.prov_hits_enabled=enabled[0]
@@ -707,6 +707,17 @@ end
                 imgui.EndTabItem()
             end
             if imgui.BeginTabItem(u8"Ускорение ударов##prov_hits_view") then
+                imgui.Text(u8"Сохранено записей об ударах: " .. tostring(#history))
+                if imgui.Button(u8"Очистить лог ударов##clear_hit_log", imgui.ImVec2(250, 32)) then
+                    history = {}
+                    hitStates = {}
+                    if persistHistory() then
+                        sampAddChatMessage(ru('{FFD22D}[ШиШаНи] {FFFFFF}Лог ударов очищен.'), -1)
+                    else
+                        sampAddChatMessage(ru('{FF5555}[ШиШаНи] {FFFFFF}Не удалось сохранить очистку лога.'), -1)
+                    end
+                end
+                imgui.Separator()
                 imgui.Text(u8"Диапазоны: 380-395 мс = x1.1 | 350-365 = x1.2")
                 imgui.Text(u8"316-330 мс = x1.3 | до 315 = x1.3+")
                 imgui.TextDisabled(u8"8 ударов, 7 интервалов. Скорость — ориентировочная.")
@@ -1335,7 +1346,7 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
     if imgui.Begin(u8"ШиШаНи Центр | Меню", menuOpen) then
         imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"ШиШаНи")
         imgui.SameLine()
-        imgui.TextDisabled("  /mem  |  v1.2")
+        imgui.TextDisabled("  /mem  |  v1.4")
         imgui.Separator()
         imgui.Spacing()
         if imgui.BeginTabBar("pages") then
