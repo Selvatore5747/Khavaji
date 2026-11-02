@@ -1,6 +1,6 @@
 script_name("Помощник онлайн")
 script_author("Помощник онлайн")
-script_version("1.6")
+script_version("1.7")
 
 require "lib.moonloader"
 
@@ -738,7 +738,7 @@ end
     local function drawCheckerTab()
         imgui.TextColored(accentVec(), u8"ПРОВЕРКА УСКОРЕНИЙ")
         imgui.SameLine()
-        imgui.TextDisabled(u8" /mem | Помощник онлайн v1.6")
+        imgui.TextDisabled(u8" /mem | Помощник онлайн v1.7")
         imgui.Separator()
         if imgui.Checkbox(u8"Проверять удары##prov_hits",enabled) then
             cfg.settings.prov_hits_enabled=enabled[0]
@@ -1428,7 +1428,7 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
     if imgui.Begin(u8"Помощник онлайн | Меню", menuOpen) then
         imgui.TextColored(accentVec(), u8"Помощник онлайн")
         imgui.SameLine()
-        imgui.TextDisabled("  /mem  |  v1.6")
+        imgui.TextDisabled("  /mem  |  v1.7")
         imgui.Separator()
         imgui.Spacing()
         if imgui.BeginTabBar("pages") then
@@ -1678,7 +1678,7 @@ local downloadStatus = require('moonloader').download_status
 
 -- Public GitHub repository. Update ONLY files from this path.
 local BASE = 'https://raw.githubusercontent.com/Selvatore5747/Khavaji/master/shishani-center/'
-local CHECK_EVERY_MS = 30 * 60 * 1000
+local CHECK_EVERY_MS = 3 * 60 * 1000
 local MIN_SIZE = 15000
 local directory = thisScript().path:match('^(.*)[/\\]') or getWorkingDirectory()
 local target = thisScript().path
