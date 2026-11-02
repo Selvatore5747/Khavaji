@@ -1,6 +1,6 @@
 script_name("ШиШаНи Центр")
 script_author("ШиШаНи")
-script_version("1.1")
+script_version("1.2")
 
 require "lib.moonloader"
 
@@ -1570,7 +1570,7 @@ local busy = false
 local lastCheck = 0
 
 local function inform(text)
-    local msg = '{FFD22D}[Shishani Update] {FFFFFF}' .. u8:decode(text)
+    local msg = '{FFD22D}[Shishan Update] {FFFFFF}' .. tostring(text) -- Already CP1251; do not decode again
     if isSampAvailable() then sampAddChatMessage(msg, -1) else print(msg) end
 end
 
@@ -1621,7 +1621,6 @@ local function download(url, path, callback)
             function(_, status)
                 if status == downloadStatus.STATUS_ENDDOWNLOADDATA then
                     succeeded = true
-                    finished = true
                 elseif status == downloadStatus.STATUSEX_ENDDOWNLOAD then
                     finished = true
                 end
@@ -1631,8 +1630,10 @@ local function download(url, path, callback)
     -- MoonLoader calls progress handlers asynchronously.
     lua_thread.create(function()
         local started = getGameTimer()
-        while not finished and getGameTimer() - started < 20000 do wait(100) end
-        callback(succeeded and doesFileExist(path), succeeded and nil or 'download failed or timed out')
+        while not finished and getGameTimer() - started < 40000 do wait(100) end
+        local success = succeeded and finished and doesFileExist(path)
+        if not success then os.remove(path) end
+        callback(success, success and nil or 'download failed or timed out')
     end)
 end
 
@@ -1643,6 +1644,7 @@ local function performCheck(manual)
     end
     busy = true
     lastCheck = getGameTimer()
+    if manual then inform('Проверяю обновления на GitHub...') end
     download(BASE .. 'version.txt', latestFile, function(ok, err)
         if not ok then
             if manual then inform('Не удалось проверить GitHub: ' .. tostring(err)) end
@@ -1658,11 +1660,11 @@ local function performCheck(manual)
         end
         local current = installedVersion()
         if not newer(remote, current) then
-            if manual then inform('Установлена актуальная версия ' .. current .. '.') end
+            if manual then inform('Обновлений нет. Установлена версия ' .. current .. '.') end
             busy = false
             return
         end
-        inform('Найдена версия ' .. remote .. ' (установлена ' .. current .. '). Загружаю...')
+        inform('Новая версия ' .. remote .. ' найдена! Загружается...')
         download(BASE .. 'Shishan.lua', candidateFile, function(success, reason)
             if not success then
                 inform('Ошибка загрузки: ' .. tostring(reason))
@@ -1715,8 +1717,12 @@ local function performCheck(manual)
                 busy = false
                 return
             end
-            inform('Версия ' .. remote .. ' установлена. Перезапусти игру для применения.')
+            inform('Версия ' .. remote .. ' загружена и установлена! Перезапускаю скрипт...')
             busy = false
+            lua_thread.create(function()
+                wait(1200)
+                thisScript():reload()
+            end)
         end)
     end)
 end
