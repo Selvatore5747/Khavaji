@@ -662,7 +662,7 @@ end
     local function drawCheckerTab()
         imgui.TextColored(COL_YELLOW, u8"ПРОВЕРКА УСКОРЕНИЙ")
         imgui.SameLine()
-        imgui.TextDisabled(u8" /mem | ШиШаНи v1.0")
+        imgui.TextDisabled(u8" /mem | ШиШаНи v1.2")
         imgui.Separator()
         if imgui.Checkbox(u8"Проверять удары##prov_hits",enabled) then
             cfg.settings.prov_hits_enabled=enabled[0]
@@ -1335,7 +1335,7 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
     if imgui.Begin(u8"ШиШаНи Центр | Меню", menuOpen) then
         imgui.TextColored(imgui.ImVec4(1, 0.78, 0.12, 1), u8"ШиШаНи")
         imgui.SameLine()
-        imgui.TextDisabled("  /mem  |  v1.0")
+        imgui.TextDisabled("  /mem  |  v1.2")
         imgui.Separator()
         imgui.Spacing()
         if imgui.BeginTabBar("pages") then
