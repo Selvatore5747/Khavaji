@@ -1,6 +1,6 @@
 script_name("Помощник онлайн")
 script_author("Помощник онлайн")
-script_version("2.2")
+script_version("2.3")
 -- SHISHANI_ONE_FILE_AUTOUPDATER
 -- Encoded, compact single-file MoonLoader script.
 local _payload = [=[
@@ -360,9 +360,9 @@ local function _patch_literal(old, new)
     local start = assert(_code:find(old, 1, true), 'Missing menu updater source')
     _code = _code:sub(1,start-1)..new.._code:sub(start+#old)
 end
-_patch_literal('"082F5D"', '"082F5E"')
-_patch_literal('"619B04276B49D09F79D4FD2A607FB6E3443D67A1C1F5248214FB2250"', '"619B04276B49D09F79D4FD2A607FB6E3443D67A1C1F5248214FB2251"')
-_patch_literal('"E5104AB3E71AF823AA8AB5361D4483"', '"E5104AB3E71AF823AA8AB5361D4484"')
+_patch_literal('"082F5D"', '"082F5F"')
+_patch_literal('"619B04276B49D09F79D4FD2A607FB6E3443D67A1C1F5248214FB2250"', '"619B04276B49D09F79D4FD2A607FB6E3443D67A1C1F5248214FB2252"')
+_patch_literal('"E5104AB3E71AF823AA8AB5361D4483"', '"E5104AB3E71AF823AA8AB5361D4485"')
 _patch_literal([====[
 sampRegisterChatCommand((__S(411)), function()
 scMenuOpen[0] = false
@@ -395,6 +395,8 @@ end
 sampRegisterChatCommand((__S(412)), _openFastMenu)
 sampRegisterChatCommand('fas', _openFastMenu)
 ]====])
+-- Use the built-in safe key-name lookup: getKeyName is not present in all MoonLoader versions.
+_patch_literal('getKeyName(fastShiftHoldKey[0])', '_x008(fastShiftHoldKey[0])')
 local _chunk, _error = loadstring(_code, '@Shishan.lua')
 if not _chunk then error('[Помощник онлайн] '..tostring(_error)) end
 _chunk()
