@@ -662,7 +662,7 @@ end
     local function drawCheckerTab()
         imgui.TextColored(COL_YELLOW, u8"ПРОВЕРКА УСКОРЕНИЙ")
         imgui.SameLine()
-        imgui.TextDisabled(u8" /mem | ШиШаНи v4.4")
+        imgui.TextDisabled(u8" /mem | ШиШаНи v1.0")
         imgui.Separator()
         if imgui.Checkbox(u8"Проверять удары##prov_hits",enabled) then
             cfg.settings.prov_hits_enabled=enabled[0]
