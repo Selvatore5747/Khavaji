@@ -1,6 +1,6 @@
-script_name("ШиШаНи Центр")
-script_author("ШиШаНи")
-script_version("1.5")
+script_name("Помощник онлайн")
+script_author("Помощник онлайн")
+script_version("1.6")
 
 require "lib.moonloader"
 
@@ -395,7 +395,7 @@ end
 
 local function chatAlert(e)
     -- Порядок: игрок | оружие | точный интервал (мс) | оценка xN.
-    local msg = accentChat() .. ru('[ШиШаНи] {FFFFFF}Игрок {FD446F}') .. clean(e.name)
+    local msg = accentChat() .. ru('[Помощник онлайн] {FFFFFF}Игрок {FD446F}') .. clean(e.name)
         .. ru('{FFFFFF} | Оружие: ') .. ru(weaponLabel(e.weapon))
         .. ru(' | Интервал: ') .. string.format('%.1f', e.avg) .. ru(' мс')
         .. ru(' | ') .. tostring(e.level) .. ru(' |')
@@ -706,7 +706,7 @@ end
             runHistory[#runHistory+1]=event
             if #runHistory>MAX_RUN_HISTORY then table.remove(runHistory,1) end
             saveRunHistory()
-            sampAddChatMessage(accentChat() .. '[Shishani] {FFFFFF}' .. clean(name)
+            sampAddChatMessage(accentChat() .. '[Помощник онлайн] {FFFFFF}' .. clean(name)
                 .. ' | RUN | ' .. string.format('%.1f km/h',mean) .. ' | '..tostring(anim)..' |', -1)
         end
     end
@@ -738,7 +738,7 @@ end
     local function drawCheckerTab()
         imgui.TextColored(accentVec(), u8"ПРОВЕРКА УСКОРЕНИЙ")
         imgui.SameLine()
-        imgui.TextDisabled(u8" /mem | ШиШаНи v1.5")
+        imgui.TextDisabled(u8" /mem | Помощник онлайн v1.6")
         imgui.Separator()
         if imgui.Checkbox(u8"Проверять удары##prov_hits",enabled) then
             cfg.settings.prov_hits_enabled=enabled[0]
@@ -762,10 +762,10 @@ end
                 hitStates = {}
                 recentEvents = {}
                 recentLines = {}
-                sampAddChatMessage(accentChat() .. ru('[ШиШаНи] {FFFFFF}Лог ударов очищен.'), -1)
+                sampAddChatMessage(accentChat() .. ru('[Помощник онлайн] {FFFFFF}Лог ударов очищен.'), -1)
             else
                 history = previousHistory
-                sampAddChatMessage(ru('{FF5555}[ШиШаНи] {FFFFFF}Ошибка очистки файла истории.'), -1)
+                sampAddChatMessage(ru('{FF5555}[Помощник онлайн] {FFFFFF}Ошибка очистки файла истории.'), -1)
             end
         end
         imgui.TextDisabled(u8"История ускоренного бега не удаляется")
@@ -861,8 +861,8 @@ end
             local now=getGameTimer()
             if now - lastUiErrorAt>10000 then
                 lastUiErrorAt=now
-                sampAddChatMessage('{FF5555}[Shishani] Checker UI error; see moonloader.log', -1)
-                if type(print)=='function' then print('[Shishani] Checker UI error: '..uiError) end
+                sampAddChatMessage('{FF5555}[Помощник онлайн] Checker UI error; see moonloader.log', -1)
+                if type(print)=='function' then print('[Помощник онлайн] Checker UI error: '..uiError) end
             end
             -- A UI fault must not bring down the remaining /mem features.
         end
@@ -970,17 +970,17 @@ end
 local function commitBinder()
     local cmd = ffi.string(bindCommand):gsub('[\r\n\t]', ' '):gsub('^%s+', ''):gsub('%s+$', '')
     if cmd == '' then
-        sampAddChatMessage('{FFCC44}[Shishani] {FFFFFF}Enter a command for the bind.', -1)
+        sampAddChatMessage('{FFCC44}[Помощник онлайн] {FFFFFF}Enter a command for the bind.', -1)
         return
     end
     local ok, ansi = pcall(function() return u8:decode(cmd) end)
     if not ok or not ansi or #ansi > 144 then
-        sampAddChatMessage('{FFCC44}[Shishani] {FFFFFF}Command too long or encoding unsupported.', -1)
+        sampAddChatMessage('{FFCC44}[Помощник онлайн] {FFFFFF}Command too long or encoding unsupported.', -1)
         return
     end
     local key, key2 = bindKey[0], bindKeySecond[0]
     if key < 3 or key > 254 or (key2 ~= 0 and (key2 < 3 or key2 > 254 or key2 == key)) then
-        sampAddChatMessage('{FFCC44}[Shishani] {FFFFFF}Invalid combination (keys must differ).', -1)
+        sampAddChatMessage('{FFCC44}[Помощник онлайн] {FFFFFF}Invalid combination (keys must differ).', -1)
         return
     end
     local b = {
@@ -992,7 +992,7 @@ local function commitBinder()
     elseif #binds < BINDER_LIMIT then
         binds[#binds + 1] = b
     else
-        sampAddChatMessage('{FFCC44}[Shishani] {FFFFFF}Binder limit reached (30).', -1)
+        sampAddChatMessage('{FFCC44}[Помощник онлайн] {FFFFFF}Binder limit reached (30).', -1)
         return
     end
     binderKeyWasDown, binderLastSend = {}, {}
@@ -1157,7 +1157,7 @@ local function createCard()
     local text = ffi.string(cardText):gsub("^%s+", ""):gsub("%s+$", "")
 
     if title == "" or text == "" then
-        sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}Введите название и текст карточки.", -1)
+        sampAddChatMessage("{58B4FF}[Помощник онлайн] {FFFFFF}Введите название и текст карточки.", -1)
         return
     end
 
@@ -1169,7 +1169,7 @@ end
 
 local function useReportCard(card)
     if waitingReportDialog then
-        sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}/report уже ожидает диалог.", -1)
+        sampAddChatMessage("{58B4FF}[Помощник онлайн] {FFFFFF}/report уже ожидает диалог.", -1)
         return
     end
 
@@ -1182,7 +1182,7 @@ local function useReportCard(card)
         if waitingReportDialog then
             waitingReportDialog = false
             pendingReportText = nil
-            sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}Диалог /report не открылся.", -1)
+            sampAddChatMessage("{58B4FF}[Помощник онлайн] {FFFFFF}Диалог /report не открылся.", -1)
         end
     end)
 end
@@ -1425,10 +1425,10 @@ end)
 
 imgui.OnFrame(function() return menuOpen[0] end, function()
     imgui.SetNextWindowSize(imgui.ImVec2(780, 720), imgui.Cond.FirstUseEver)
-    if imgui.Begin(u8"ШиШаНи Центр | Меню", menuOpen) then
-        imgui.TextColored(accentVec(), u8"ШиШаНи")
+    if imgui.Begin(u8"Помощник онлайн | Меню", menuOpen) then
+        imgui.TextColored(accentVec(), u8"Помощник онлайн")
         imgui.SameLine()
-        imgui.TextDisabled("  /mem  |  v1.5")
+        imgui.TextDisabled("  /mem  |  v1.6")
         imgui.Separator()
         imgui.Spacing()
         if imgui.BeginTabBar("pages") then
@@ -1571,7 +1571,7 @@ imgui.OnFrame(function() return menuOpen[0] end, function()
                 if imgui.SliderFloat(u8"Синий (B)##acc_b", accentB, 0, 1, '%.2f') then changed = true end
                 if changed then applyAccentStyle(); saveSettings() end
                 imgui.Spacing()
-                imgui.TextColored(accentVec(), u8"ПРИМЕР ЦВЕТА   /   ШиШаНи")
+                imgui.TextColored(accentVec(), u8"ПРИМЕР ЦВЕТА   /   Помощник онлайн")
                 imgui.TextDisabled(u8"Настройка автоматически сохраняется после изменения.")
                 if imgui.Button(u8"Вернуть жёлтый цвет##accent_reset", imgui.ImVec2(240, 35)) then
                     setAccent(1.00,0.78,0.14)
@@ -1586,7 +1586,7 @@ end)
 
 imgui.OnFrame(function() return fastMenuOpen[0] end, function()
     imgui.SetNextWindowSize(imgui.ImVec2(430, 280), imgui.Cond.FirstUseEver)
-    if imgui.Begin(u8"ШиШаНи | Fast F / Shift", fastMenuOpen) then
+    if imgui.Begin(u8"Помощник онлайн | Fast F / Shift", fastMenuOpen) then
         if imgui.Checkbox(u8"Включить Fast F", fastFEnabled) then saveSettings() end
         if fastFEnabled[0] then
             if imgui.SliderInt(u8"Задержка F (мс)", fastFDelay, 1, 2000) then saveSettings() end
@@ -1614,7 +1614,7 @@ end)
 -- Compact /sc window, independent from /mem and /fast.
 imgui.OnFrame(function() return scMenuOpen[0] end, function()
     imgui.SetNextWindowSize(imgui.ImVec2(450, 195), imgui.Cond.FirstUseEver)
-    if imgui.Begin(u8"ШиШаНи | Скорость", scMenuOpen) then
+    if imgui.Begin(u8"Помощник онлайн | Скорость", scMenuOpen) then
         imgui.TextColored(accentVec(), u8"СКОРОСТЬ АНИМАЦИЙ")
         imgui.Separator()
         imgui.Text(u8(string.format("Скорость: x%.1f", scSpeed)))
@@ -1689,7 +1689,7 @@ local busy = false
 local lastCheck = 0
 
 local function inform(text)
-    local msg = accentChat() .. '[Shishan Update] {FFFFFF}' .. tostring(text) -- Already CP1251; do not decode again
+    local msg = accentChat() .. '[Помощник онлайн | Обновление] {FFFFFF}' .. tostring(text) -- Already CP1251; do not decode again
     if isSampAvailable() then sampAddChatMessage(msg, -1) else print(msg) end
 end
 
@@ -1813,7 +1813,7 @@ local function performCheck(manual)
             local chunk, syntaxErr = loadstring(ansi, '@Shishan.lua')
             if not chunk then
                 inform('Обновление содержит ошибку Lua. Старый файл сохранён.')
-                print('Shishani update parse error: ' .. tostring(syntaxErr))
+                print('Помощник онлайн | ошибка обновления: ' .. tostring(syntaxErr))
                 busy = false
                 return
             end
@@ -1885,7 +1885,7 @@ function main()
         scMenuOpen[0] = not scMenuOpen[0]
     end)
 
-    sampAddChatMessage("{58B4FF}[ШиШаНи] {FFFFFF}Загружен. Меню: /mem", -1)
+    sampAddChatMessage("{58B4FF}[Помощник онлайн] {FFFFFF}Загружен. Меню: /mem", -1)
 
     while true do
         wait(0)
@@ -2042,14 +2042,14 @@ function sampev.onPlayerSync(playerId, data)
         local now = getGameTimer()
         if not lastRunSyncErrAt or now-lastRunSyncErrAt>15000 then
             lastRunSyncErrAt=now
-            print('[Shishani] Run monitor: '..tostring(err))
+            print('[Помощник онлайн] Run monitor: '..tostring(err))
         end
     end
 end
 
 function sampev.onServerMessage(color, text)
     local ok, err = pcall(prov.onServerMessage, color, text)
-    if not ok and type(print)=='function' then print('[Shishani] Hit monitor: '..tostring(err)) end
+    if not ok and type(print)=='function' then print('[Помощник онлайн] Hit monitor: '..tostring(err)) end
     recordFamilyHp(text)
     if hideHpMessages[0] and text:find("[MC_HP:", 1, true) then return false end
     if not fampointEnabled[0] then return end
